@@ -2,6 +2,7 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
+using UnityEngine.EventSystems;
 
 public class InventoryController : MonoBehaviour
 {
@@ -22,15 +23,19 @@ public class InventoryController : MonoBehaviour
     {
         _grid = new InventoryGrid(_gridWidth, _gridHeight);
         _panel.Initialize(_grid);
+
     }
 
     void Start()
     {
         // 把预制体克隆到场景里
         _currentDragItem = Instantiate(_currentDragItem, _canvas.transform);
+        _currentDragItem.OnPickup+=HandlePickup;
 
         int w = _currentDragItem.itemData.GetWidth(false);
         int h = _currentDragItem.itemData.GetHeight(false);
+
+        ItemData itemData =_currentDragItem.itemData;
 
         // 计算物品的像素尺寸（cellSize=60, spacing=2）
         var rt = _currentDragItem.GetComponent<RectTransform>();
@@ -43,8 +48,8 @@ public class InventoryController : MonoBehaviour
         Vector2 topRight = _panel.GridToScreen(w - 1, h - 1);
         rt.position = (bottomLeft + topRight) / 2f;
 
-        // 数据层放置
-        _grid.Place(0, 0, w, h);
+        // 数据层放置，记住 itemId
+        _currentDragItem.itemId = _grid.Place(0, 0, w, h, itemData);
         _panel.RefreshAll();
     }
 
@@ -84,6 +89,7 @@ public class InventoryController : MonoBehaviour
         int w = _currentDragItem.itemData.GetWidth(_rotated);
         int h = _currentDragItem.itemData.GetHeight(_rotated);
 
+
         // 鼠标屏幕坐标 → 网格坐标
         if (_panel.ScreenToGrid(Input.mousePosition, out int cx, out int cy))
         {
@@ -99,26 +105,69 @@ public class InventoryController : MonoBehaviour
         }
     }
 
+    void HandlePickup(DragItem item, PointerEventData eventData)
+    {
+        // 1. 从字典查（走 itemId，不依赖像素命中）
+        if (!_grid.TryGetItemById(item.itemId, out PlacedItem placed))
+            return;
 
-    // 放下物品：鼠标格子 + 偏移 → 反推原点 → 尝试 Place
+        // 2. 记下拾取偏移，拿到鼠标格子
+        if (!_panel.ScreenToGrid(eventData.position, out int cx, out int cy))
+            return; // 没命中格子，不处理
+
+        _dragOffset.x = placed.originX - cx;
+        _dragOffset.y = placed.originY - cy;
+
+        // 3. 清掉数据层旧位置
+        _grid.ClearItem(placed);
+
+        // 4. 刷新显示
+        _panel.RefreshAll();
+    }
+
+
+    // 放下物品：鼠标格子 + 偏移 → 反推原点 → 移动已有物品
     public bool TryPlaceItem(DragItem item)
     {
-        int w = item.itemData.GetWidth(_rotated);
-        int h = item.itemData.GetHeight(_rotated);
-
         if (!_panel.ScreenToGrid(Input.mousePosition, out int cx, out int cy))
+        {
+            RestoreItemToOriginal(item);
             return false;
+        }
 
         int originX = cx + _dragOffset.x;
         int originY = cy + _dragOffset.y;
 
-        if (_grid.Place(originX, originY, w, h))
+        if (_grid.MoveItem(item.itemId, originX, originY))
         {
-            Destroy(item.gameObject);
+            // 放下后把图标对齐到新格子
+            int w = item.itemData.GetWidth(_rotated);
+            int h = item.itemData.GetHeight(_rotated);
+            Vector2 bl = _panel.GridToScreen(originX, originY);
+            Vector2 tr = _panel.GridToScreen(originX + w - 1, originY + h - 1);
+            item.transform.position = (bl + tr) / 2f;
+
             _rotated = false;
             _panel.RefreshAll();
             return true;
         }
+        // 没放成功（红区），也恢复原位
+        RestoreItemToOriginal(item);
         return false;
     }
+
+    void RestoreItemToOriginal(DragItem item)
+    {
+        if (!_grid.TryGetItemById(item.itemId, out PlacedItem original)) return;
+
+        // MoveItem 恢复到原位（ClearItem 后原位是空的，CanPlace 会通过）
+        _grid.MoveItem(item.itemId, original.originX, original.originY);
+        // 恢复视觉位置
+        Vector2 bl = _panel.GridToScreen(original.originX, original.originY);
+        Vector2 tr = _panel.GridToScreen(original.originX + original.width - 1, original.originY + original.height - 1);
+        item.transform.position = (bl + tr) / 2f;
+        _panel.RefreshAll();
+    }
+
+
 }

@@ -10,6 +10,7 @@ public class DragItem : MonoBehaviour, IBeginDragHandler, IDragHandler, IEndDrag
 {
     public ItemData itemData;
     public bool rotated;
+    public int itemId;  // 在背包里的唯一ID，从字典反查用
 
     private Vector2 _offset;
     private Canvas _canvas;
@@ -18,6 +19,9 @@ public class DragItem : MonoBehaviour, IBeginDragHandler, IDragHandler, IEndDrag
     private CanvasGroup _canvasGroup;
 
     public bool IsDragging { get; private set; }
+
+    // 拖拽开始事件，Controller 订阅
+    public event System.Action<DragItem, PointerEventData> OnPickup;
 
     private void Awake()
     {
@@ -29,11 +33,12 @@ public class DragItem : MonoBehaviour, IBeginDragHandler, IDragHandler, IEndDrag
 
     public void OnBeginDrag(PointerEventData eventData)
     {
-         IsDragging = true;
+        IsDragging = true;
         _originalParent = transform.parent;
         transform.SetParent(_canvas.transform);  // 脱离父节点，渲染在最上层
         _canvasGroup.blocksRaycasts = false;     // 射线穿透到背包格子
         _offset = (Vector2)_rt.position - eventData.position;
+        OnPickup?.Invoke(this, eventData);
     }
 
     public void OnDrag(PointerEventData eventData)
@@ -47,10 +52,13 @@ public class DragItem : MonoBehaviour, IBeginDragHandler, IDragHandler, IEndDrag
         _canvasGroup.blocksRaycasts = true;
 
         var controller = FindObjectOfType<InventoryController>();
-        if (controller != null && controller.TryPlaceItem(this))
-            return; // 放成功了，物品已销毁
+        if (controller != null)
+        {
+            controller.TryPlaceItem(this); // 成功或失败都由 Controller 处理定位
+            return;
+        }
 
-        ReturnToOriginal(); // 没放成功，回到原位
+        ReturnToOriginal();
     }
 
     public void ReturnToOriginal()

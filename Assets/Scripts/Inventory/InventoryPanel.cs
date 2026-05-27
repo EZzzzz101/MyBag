@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
 
+
 /// <summary>
 /// ui层，只管显示逻辑
 /// </summary>
@@ -23,9 +24,8 @@ public class InventoryPanel : MonoBehaviour
     private GridLayoutGroup _layout;
 
     // ===== 事件（Controller 订阅） =====
-    public event System.Action<int, int> OnCellEnter;      // 拖拽中鼠标进入某格
-    public event System.Action<int, int> OnCellDrop;       // 物品放到某格
-    public event System.Action<int, int> OnCellRightClick; // 右键某格
+    // public event System.Action<int, int> OnCellEnter;      // 拖拽中鼠标进入某格
+    // public event System.Action<int, int> OnCellRightClick; // 右键某格
 
     /// <summary>
     /// 初始化背包格子
@@ -107,23 +107,31 @@ public class InventoryPanel : MonoBehaviour
     /// </summary>
     public bool ScreenToGrid(Vector2 screenPos, out int gridX, out int gridY)
     {
-        gridX = -1;
-        gridY = -1;
+        gridX = gridY = -1;
 
-        for (int x = 0; x < _grid.Width; x++)
-        {
-            for (int y = 0; y < _grid.Height; y++)
-            {
-                var rt = _slotImages[x, y].rectTransform;
-                if (RectTransformUtility.RectangleContainsScreenPoint(rt, screenPos))
-                {
-                    gridX = x;
-                    gridY = y;
-                    return true;
-                }
-            }
-        }
-        return false;
+        // 1. 屏幕坐标 → Panel 本地坐标
+        RectTransformUtility.ScreenPointToLocalPointInRectangle(
+            (RectTransform)transform, screenPos, null, out Vector2 localPos);
+
+        Rect panelRect = ((RectTransform)transform).rect;
+
+        // 原点从中心挪到左上角
+        float xFromLeft = localPos.x + panelRect.width / 2f;
+        float yFromTop = panelRect.height / 2f-localPos.y;  
+        
+        
+        // 2. 数学计算（高 H 格、间距 2、cellSize 60）
+        float cellWithSpacing = 60 + 2;  // cellSize + spacing
+        gridX = Mathf.FloorToInt(xFromLeft/ cellWithSpacing);
+        int rowFromTop = Mathf.FloorToInt(yFromTop / cellWithSpacing);   // 先算出从上第几排
+        gridY = (_grid.Height - 1) - rowFromTop;         // 再翻转到从下算
+
+        // 3. 边界检查
+        if (gridX < 0 || gridX >= _grid.Width || gridY < 0 || gridY >= _grid.Height)
+            return false;
+
+        Debug.Log($"({gridX}, {gridY})");
+        return true;
     }
 
 }
